@@ -20,32 +20,53 @@ def main():
         max_iters=4000,
     )
 
-    # ##balloon = Balloon(sys._radius, sys.num_balls, sys.center)
-    # #plot_balls(balloon._balls, 0.5, draw_axes='on')
-    # iter_results = balloon.inflate(sys=sys, verbosity=2)
-    # #plot_balls(balloon._balls, 0.5, draw_axes='on')
+    balloon = Balloon(sys.radius, sys.num_balls, sys.center)
+    #plot_balls(balloon._balls, 0.5, draw_axes='on')
+    iter_results = balloon.inflate(sys=sys, verbosity=2)
+    #plot_balls(balloon._balls, 0.5, draw_axes='on')
+    #plt.show()
 
 
-    # iter_results = balloon.puncture(sys=sys, verbosity=2)
+    iter_results = balloon.puncture(sys=sys, verbosity=2)
     # #plot_balls(balloon._balls, 0.5, draw_axes='on')
 
     # plt.rcParams.update({'figure.max_open_warning': 0})
-    # fig, ax = plt.subplots()
+    fig, ax = plt.subplots()
 
-    # plt.ion()
-    # plt.show()
-    # for idx, balloon in enumerate(iter_results):
-    #     plt.cla()
-    #     plt.xlim([-90, 90])
-    #     plt.ylim([-90, 90])
-    #     ax = plot_balls(balloon._balls, 0.5, draw_axes='on', ax=ax)
-    #     plt.pause(0.01)
-    #     #plt.draw()
-    #     print("DBG: " + str(idx))
+    plt.ion()
+    plt.show()
+    for idx, balloon in enumerate(iter_results):
+        plt.cla()
+        plt.xlim([-90, 90])
+        plt.ylim([-90, 90])
+        ax = plot_balls(balloon._balls, 0.5, draw_axes='on', ax=ax)
+        plt.pause(0.01)
+        #plt.draw()
+        #print("DBG: " + str(idx))
 
-    single_ball = StraightChain(num_balls=1)
-    single_ball.draw()
+    #fig, ax = plt.subplots()
+    #plt.xlim([-1, 4])
+    #plt.ylim([-1, 4])
+    #ax.set_aspect('equal')
+    #plt.grid()
 
+    #simple_chain = StraightChain(num_balls=4)
+    #simple_chain.draw(ax)
+
+    #print(simple_chain)
+    #plt.show()
+
+    #sim = BallsAndSpringsSystem(time_step=0.5, max_iters=5)
+    #sim.relax(simple_chain)
+
+    #balloon = Balloon(num_balls=4, radius=1, spring_const=1)
+    #
+    #balloon.inflate(2, animate=True, ax=ax)
+    #balloon.draw(ax=ax)
+    ##sim.relax(balloon)
+    #balloon.puncture(5, animate=True, ax=ax)
+    #balloon.draw(ax=ax)
+    ##sim.relax(balloon)
 
 
 
