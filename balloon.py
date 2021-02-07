@@ -50,6 +50,33 @@ def _vect_unit_vector(v):
     u = v/norm
     return u
 
+def _get_bbox(pt, bbox=None, big_box_side=6.4E23):
+    if bbox is None:
+        xmin, xmax = big_box_side, -big_box_side
+        ymin, ymax = big_box_side, -big_box_side
+        min_pt = np.array([xmin, ymin])
+        max_pt = np.array([xmax, ymax])
+        bbox =(min_pt, max_pt)
+
+    min_pt, max_pt = bbox
+    xmin, ymin = min_pt
+    xmax, ymax = max_pt
+    x, y = pt
+
+    if x < xmin:
+        xmin = x
+    if x > xmax:
+        xmax = x
+    if y < ymin:
+        ymin = y
+    if y > ymax:
+        ymax = y
+    min_pt = np.array([xmin, ymin])
+    max_pt = np.array([xmax, ymax])
+
+    new_bbox =(min_pt, max_pt)
+    return new_bbox
+
 
 class Ball(object):
     """
@@ -169,6 +196,12 @@ class BallsAndSpringsGeometry(object):
     def calc_net_force(self, ball: Ball):
         return self._calc_total_spring_force(ball)
 
+    def get_bbox(self):
+        bbox = None
+        for ball in self._balls:
+            bbox = _get_bbox(ball.get_pos(), bbox)
+        return bbox
+
     #@classmethod
     #def _calc_vect_norm_and_dir(cls, v):
     #    x = v[X]
@@ -266,10 +299,16 @@ class BalloonGeometry(BallsAndSpringsGeometry):
         self._spring_const = spring_const
         self._inside_pressure = inside_pressure
         self._outside_pressure = 0.0
+        self._pressure_loss_rate = 0.1
+        self._punctured = False
         self._create()
 
     def set_pressure(self, new_pressure):
         self._inside_pressure = new_pressure
+
+    def puncture(self, at, span):
+        self._springs[at]._k = 0
+        self._punctured = True
 
     def _create(self):
         xs, ys = create_polygon(radius=self._radius, N=self._num_balls, x0=self._center[0], y0=self._center[1])
@@ -290,22 +329,32 @@ class BalloonGeometry(BallsAndSpringsGeometry):
                     self._neighbors[b] = []
                 self._neighbors[b].append(neigh)
 
-    def calc_net_force(self, ball: Ball):
+    def calc_net_force(self, ball: Ball, dt: float):
         total_tension = self._calc_total_spring_force(ball)
-        pressure_force = self._calc_total_pressure_force(ball)
+        pressure_force = self._calc_total_pressure_force(ball, dt)
         total_force = total_tension + pressure_force
         return total_force
 
-    def _calc_total_pressure_force(self, ball, del_area=1.0):
+    def _calc_total_pressure_force(self, ball, dt, del_area=1.0):
         dir_along_radius = self._get_unit_vector(frm=self._center, to=ball.get_pos())
+        if self._punctured:
+            self._lose_pressure(dt, del_area)
         force = del_area * (self._inside_pressure - self._outside_pressure) * dir_along_radius
         return force
 
+    def _lose_pressure(self, dt, del_area):
+        pressure_loss = dt*del_area*self._pressure_loss_rate
+        self._inside_pressure -= pressure_loss
+        if self._inside_pressure < self._outside_pressure:
+            self._inside_pressure = self._outside_pressure
 
 class BallsAndSpringsSimulator(object):
-    def __init__(self, time_step, max_iter):
+    def __init__(self, time_step, max_iter, update_pos_tol, residue_force_tol):
         self._dt = time_step
         self._max_iter = max_iter
+        self._update_pos_tol = update_pos_tol
+        self._residue_force_tol = residue_force_tol
+        self._geom_iters = []
 
     def relax(self, geom: BallsAndSpringsGeometry, verbosity=1):
         prev_geom = geom.copy()
@@ -316,7 +365,7 @@ class BallsAndSpringsSimulator(object):
             new_balls = new_geom.get_balls()
             residue_force = 0
             for idx, ball in enumerate(balls):
-                force = prev_geom.calc_net_force(ball)
+                force = prev_geom.calc_net_force(ball, self._dt)
                 new_pos = ball.get_next_pos(force, self._dt)
                 if verbosity > 5:
                     print("D>> New pos: " + str(new_pos) + " force: " + str(force))
@@ -333,7 +382,7 @@ class BallsAndSpringsSimulator(object):
                 # print("NEW: " + str(ball))
             if verbosity > 1:
                 print('I>> Itr # {:.0f} dx = {:.4G}, force = {:.4G}'.format(it, del_posns, residue_force))
-            if del_posns < 0.02 and residue_force < 1:
+            if del_posns < self._update_pos_tol and residue_force < self._residue_force_tol:
                 if verbosity > 0:
                     print('I>> Itr # {:.0f} dx = {:.4G}, force = {:.4G}'.format(it, del_posns, residue_force))
                     print('I>> Converged')
@@ -345,18 +394,27 @@ class BallsAndSpringsSimulator(object):
     #def relax(self):
     #    pass
 
+    def get_bbox_for_all_iters(self):
+        bbox = None
+        for geom in self._geom_iters:
+            box = geom.get_bbox()
+            bbox = _get_bbox(box[0], bbox)
+            bbox = _get_bbox(box[1], bbox)
+        return bbox
+
 
 class Balloon(object):
-    def __init__(self, radius=1, num_balls=25, center=np.array([0, 0]), time_step=0.5, max_iter=4000):
+    def __init__(self, radius=1, num_balls=25, center=np.array([0, 0]), time_step=0.5, max_iter=4000,
+                 update_pos_tol=2E-3, residue_force_tol=1E-3):
         #self._balls = []
         #self._sticks = []
         #self._radius = radius
         #self._num_balls = num_balls
         #self._center = center
         #self._create()
-        self._geom_iters = []
         self._geom = BalloonGeometry(radius=radius, num_balls=num_balls, center=center)
-        self._sim = BallsAndSpringsSimulator(time_step=time_step, max_iter=max_iter)
+        self._sim = BallsAndSpringsSimulator(time_step=time_step, max_iter=max_iter, update_pos_tol=update_pos_tol,
+                                             residue_force_tol=residue_force_tol)
 
     #def _create(self):
     #    xs, ys = create_polygon(radius=self._radius, N=self._num_balls, x0=self._center[0], y0=self._center[1])
@@ -406,26 +464,40 @@ class Balloon(object):
         self._geom = geom_iters[len(geom_iters)-1]
         self._geom_iters = geom_iters
 
-    def puncture(self, sys, verbosity=1):
-        ### balloon[len(balloon)-1].set_neigh2(None)
-        ### balloon[0].set_neigh1(None)
-        self._balls[0].set_neigh2(None)
-        self._balls[1].set_neigh1(None)
-        return self.relax(sys, verbosity)
+    def puncture(self, at=0, span=1, verbosity=1):
+        self._geom.puncture(at, span)
+        geom_iters = self._sim.relax(self._geom, verbosity)
+        self._geom = geom_iters[len(geom_iters)-1]
+        self._geom_iters = geom_iters
 
-    def draw(self, ax):
+    def draw(self, ax=None):
+        if ax is None:
+            fig, ax = plt.subplots()
+        bbox = self._geom.get_bbox()
+        ax.set_aspect('equal')
+        ax.set_xlim([bbox[0][X]*1.1, bbox[1][X]*1.1])
+        ax.set_ylim([bbox[0][Y]*1.1, bbox[1][Y]*1.1])
         self._geom.draw(ax)
+        return ax
 
-    def animate(self, ax):
-        #ax.ion()
+    def animate(self):
+        fig, ax = plt.subplots()
+        ax.set_aspect('equal')
+        ax.grid()
+        plt.ion()
+        lim = 2
+        ax.set_xlim([-lim, lim])
+        ax.set_ylim([-lim, lim])
+        #plt.ion()
+        #plt.show()
         for idx, geom in enumerate(self._geom_iters):
-            ax.cla()
-            ax.set_xlim([-90, 90])
-            ax.set_ylim([-90, 90])
+            plt.cla()
+            plt.xlim([-lim, lim])
+            plt.ylim([-lim, lim])
             geom.draw(ax)
-            plt.pause(0.01)
-            #plt.draw()
-            #print("DBG: " + str(idx))
+            plt.pause(1)
+        #plt.ion()
+        plt.show()
 
 
 
