@@ -102,6 +102,9 @@ class Ball(object):
     def set_pos(self, new_pos: np.array):
         self._pos = new_pos
 
+    def set_color(self, color):
+        self._color = color
+
     def move(self, vector: np.array):
         self._pos = self._pos + vector
 
@@ -140,6 +143,7 @@ class Spring(object):
         self._b2 = bound2
         self._k = spring_const
         self._l0 = relaxed_length
+        self._linewidth_coeff = 0.1
         self._color = 'k'
 
     def get_length(self):
@@ -156,7 +160,8 @@ class Spring(object):
         p, q = self._get_end_pos()
         xs = np.array([p[X], q[X]])
         ys = np.array([p[Y], q[Y]])
-        ax.plot(xs, ys, '-', color=self._color, linewidth=2)
+        linewidth = self._linewidth_coeff*self.get_force()
+        ax.plot(xs, ys, '-', color=self._color, linewidth=linewidth)
 
     def _get_end_pos(self):
         return self._b1.get_pos(), self._b2.get_pos()
@@ -182,6 +187,11 @@ class BallsAndSpringsGeometry(object):
 
     #def get_springs(self):
     #    return self._springs
+
+    def set_ball_color(self, ball: int, color: str):
+        idx = ball % len(self._balls)
+        self._balls[idx].set_color(color)
+        pass
 
     def copy(self):
         new = cp.deepcopy(self)
@@ -291,17 +301,19 @@ class BalloonGeometry(BallsAndSpringsGeometry):
     array([-3.,  0.])
     """
     def __init__(self, radius: float = 1, num_balls: int = 25, center=np.array([0, 0]), spring_const: float = 1,
-                 inside_pressure: float = 0,):
+                 inside_pressure: float = 0, ball_radius: float = 0.2):
         super().__init__()
         self._radius = radius
         self._num_balls = num_balls
         self._center = center
         self._spring_const = spring_const
         self._inside_pressure = inside_pressure
+        self._ball_radius = ball_radius
         self._outside_pressure = 0.0
         self._pressure_loss_rate = 0.1
         self._punctured = False
         self._create()
+
 
     def set_pressure(self, new_pressure):
         self._inside_pressure = new_pressure
@@ -315,7 +327,7 @@ class BalloonGeometry(BallsAndSpringsGeometry):
         self._balls = []
         self._springs = []
         for x, y in zip(xs, ys):
-            b = Ball(x, y)
+            b = Ball(x, y, radius=self._ball_radius)
             self._balls.append(b)
         self._num_balls = len(self._balls)
         for idx, b in enumerate(self._balls):
@@ -404,7 +416,7 @@ class BallsAndSpringsSimulator(object):
 
 
 class Balloon(object):
-    def __init__(self, radius=1, num_balls=25, center=np.array([0, 0]), time_step=0.5, max_iter=4000,
+    def __init__(self, radius=1, num_balls=25, center=np.array([0, 0]), ball_radius=0.2, time_step=0.5, max_iter=4000,
                  update_pos_tol=2E-3, residue_force_tol=1E-3):
         #self._balls = []
         #self._sticks = []
@@ -412,7 +424,7 @@ class Balloon(object):
         #self._num_balls = num_balls
         #self._center = center
         #self._create()
-        self._geom = BalloonGeometry(radius=radius, num_balls=num_balls, center=center)
+        self._geom = BalloonGeometry(radius=radius, num_balls=num_balls, center=center, ball_radius=ball_radius)
         self._sim = BallsAndSpringsSimulator(time_step=time_step, max_iter=max_iter, update_pos_tol=update_pos_tol,
                                              residue_force_tol=residue_force_tol)
 
@@ -457,6 +469,10 @@ class Balloon(object):
     #            break
 
     #    return iter_results
+
+    def set_color(self, balls: list, color: str):
+        for ball in balls:
+            self._geom.set_ball_color(ball, color)
 
     def inflate(self, new_pressure: float, verbosity=1):
         self._geom.set_pressure(new_pressure)
